@@ -796,7 +796,25 @@ namespace TombEditor.Controls
                             _movementTimer.Animate(AnimationMode.GhostBlockUnfold, 0.4f);
 
                         // Select object
-                        _editor.SelectedObject = obj;
+
+                        var selectedItemInstance = _editor.SelectedObject as ItemInstance;
+                        var selectedObjectGroup = _editor.SelectedObject as ObjectGroup;
+
+                        if (ModifierKeys.HasFlag(Keys.Control) &&
+                            obj is ItemInstance item &&
+                            (selectedItemInstance != null || selectedObjectGroup != null))
+                        {
+                            var objectGroup = selectedObjectGroup ?? new ObjectGroup(selectedItemInstance);
+
+                            objectGroup.Add(item);
+
+                            _editor.SelectedObject = objectGroup;
+                        }
+                        else
+                        {
+
+                            _editor.SelectedObject = obj;
+                        }
 
                         if (obj is ItemInstance)
                             _dragObjectPicked = true; // Prepare for drag-n-drop
@@ -2738,6 +2756,8 @@ namespace TombEditor.Controls
             if (moveablesToDraw.Count == 0)
                 return;
 
+            var activeObjectGroup = _editor.SelectedObject as ObjectGroup;
+
             _legacyDevice.SetBlendState(_legacyDevice.BlendStates.Opaque);
             var skinnedModelEffect = DeviceManager.DefaultDeviceManager.___LegacyEffects["Model"];
             skinnedModelEffect.Parameters["AlphaTest"].SetValue(HideTransparentFaces);
@@ -2783,7 +2803,10 @@ namespace TombEditor.Controls
 
                         foreach (var mov in movGroup)
                         {
-                            if (!disableSelection && _editor.SelectedObject == mov) // Selection
+                            var isSelected = _editor.SelectedObject == mov ||
+                                             activeObjectGroup != null && activeObjectGroup.Contains(mov);
+
+                            if (!disableSelection && isSelected) // Selection
                                 skinnedModelEffect.Parameters["Color"].SetValue(_editor.Configuration.UI_ColorScheme.ColorSelection);
                             else
                             {
@@ -2958,6 +2981,8 @@ namespace TombEditor.Controls
             if (staticsToDraw.Count == 0)
                 return;
 
+            var activeObjectGroup = _editor.SelectedObject as ObjectGroup;
+
             _legacyDevice.SetBlendState(_legacyDevice.BlendStates.Opaque);
             var staticMeshEffect = DeviceManager.DefaultDeviceManager.___LegacyEffects["StaticModel"];
             staticMeshEffect.Parameters["AlphaTest"].SetValue(HideTransparentFaces);
@@ -2994,7 +3019,10 @@ namespace TombEditor.Controls
 
                         foreach (var st in stGroup)
                         {
-                            if (!disableSelection && _editor.SelectedObject == st)
+                            var isSelected = _editor.SelectedObject == st ||
+                                             activeObjectGroup != null && activeObjectGroup.Contains(st);
+
+                            if (!disableSelection && isSelected)
                                 staticMeshEffect.Parameters["Color"].SetValue(_editor.Configuration.UI_ColorScheme.ColorSelection);
                             else
                             {

@@ -768,7 +768,7 @@ namespace TombEditor
             }
 
             // Update position
-            instance.Position = pos;
+            instance.SetPosition(pos);
 
             // Update state
             if (instance is LightInstance)
@@ -819,10 +819,13 @@ namespace TombEditor
             switch (axis)
             {
                 case RotationAxis.Y:
-                    var rotateableY = instance as IRotateableY;
-                    if (rotateableY == null)
+                    if (Control.ModifierKeys.HasFlag(Keys.Alt) && instance is ObjectGroup og)
+                        og.RotateAsGroup(angleInDegrees + (delta ? og.RotationY : 0));
+                    else if (instance is IRotateableY rotateableY)
+                        rotateableY.RotationY = angleInDegrees + (delta ? rotateableY.RotationY : 0);
+                    else
                         return;
-                    rotateableY.RotationY = angleInDegrees + (delta ? rotateableY.RotationY : 0);
+
                     break;
                 case RotationAxis.X:
                     var rotateableX = instance as IRotateableYX;
@@ -842,7 +845,7 @@ namespace TombEditor
                 instance.Room.BuildGeometry();
                 instance.Room.RebuildLighting(_editor.Configuration.Rendering3D_HighQualityLightPreview);
             }
-                
+             
             _editor.ObjectChange(instance, ObjectChangeType.Change);
         }
 
@@ -950,7 +953,7 @@ namespace TombEditor
             else
             {
                 ObjectInstance instance = data.MergeGetSingleObject(_editor);
-
+                
                 if (instance is ISpatial)
                 {
                     // HACK: fix imported geometry reference
@@ -1012,7 +1015,11 @@ namespace TombEditor
 
         public static void DeleteObject(ObjectInstance instance, IWin32Window owner = null)
         {
-            DeleteObjects(new List<ObjectInstance>() { instance }, owner);
+            var objectsToDelete = instance is ObjectGroup og
+                ? og.OfType<ObjectInstance>().ToList()
+                : new List<ObjectInstance> { instance };
+
+            DeleteObjects(objectsToDelete, owner);
         }
 
         public static void DeleteObjectWithoutUpdate(ObjectInstance instance)
@@ -1849,6 +1856,14 @@ namespace TombEditor
             {
                 (instance as ItemInstance).LuaId = _editor.Level.AllocNewLuaId();
             }
+
+            if (instance is ObjectGroup og)
+            {
+                foreach (var obj in og)
+                {
+                    AllocateScriptIds(obj);
+                }
+            }
         }
 
         public static void PlaceObject(Room room, VectorInt2 pos, ObjectInstance instance)
@@ -1856,17 +1871,14 @@ namespace TombEditor
             if (!(instance is ISpatial))
                 return;
 
-            if (instance is PositionBasedObjectInstance)
+            if (instance is PositionBasedObjectInstance posInstance)
             {
-                var posInstance = (PositionBasedObjectInstance)instance;
-
                 PlaceObjectWithoutUpdate(room, pos, posInstance);
                 _editor.UndoManager.PushObjectCreated(posInstance);
                 AllocateScriptIds(posInstance);
             }
-            else if (instance is GhostBlockInstance)
+            else if (instance is GhostBlockInstance ghost)
             {
-                var ghost = (GhostBlockInstance)instance;
                 if (PlaceGhostBlockWithoutUpdate(room, pos, ghost))
                     _editor.UndoManager.PushGhostBlockCreated(ghost);
                 else
@@ -1879,7 +1891,8 @@ namespace TombEditor
             Block block = room.GetBlock(pos);
             int y = (block.Floor.XnZp + block.Floor.XpZp + block.Floor.XpZn + block.Floor.XnZn) / 4;
 
-            instance.Position = new Vector3(pos.X * 1024 + 512, y * 256, pos.Y * 1024 + 512);
+            var placedPosition = new Vector3(pos.X * 1024 + 512, y * 256, pos.Y * 1024 + 512);
+            instance.SetPosition(placedPosition);
             room.AddObject(_editor.Level, instance);
             if (instance is LightInstance)
             {

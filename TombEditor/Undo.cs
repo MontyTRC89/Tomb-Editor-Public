@@ -83,12 +83,17 @@ namespace TombEditor
     public class AddRemoveObjectUndoInstance : EditorUndoRedoInstance
     {
         private PositionBasedObjectInstance UndoObject;
+        private IReadOnlyList<ItemInstance> Children;
         private bool Created;
 
         public AddRemoveObjectUndoInstance(EditorUndoManager parent, PositionBasedObjectInstance obj, bool created) : base(parent, obj.Room)
         {
             Created = created;
             UndoObject = obj;
+            if (obj is ObjectGroup og)
+            { // need to make a copy because removing ObjectGroup removes children from it first
+                Children = og.ToList();
+            }
 
             Valid = () =>
             {
@@ -114,6 +119,14 @@ namespace TombEditor
                     EditorActions.DeleteObjectWithoutUpdate(UndoObject);
                 else
                 {
+                    if (UndoObject is ObjectGroup grp)
+                    {
+                        foreach (var child in Children)
+                        {
+                            grp.Add(child);   
+                        }
+                    }
+
                     var backupPos = obj.Position; // Preserve original position and reassign it after placement
                     EditorActions.PlaceObjectWithoutUpdate(Room, obj.SectorPosition, UndoObject);
                     EditorActions.MoveObject(UndoObject, backupPos);
@@ -141,6 +154,7 @@ namespace TombEditor
         private float? RotationY = null;
         private float? RotationX = null;
         private float? Roll = null;
+        private Dictionary<int, Vector3> _groupedObjectPositions;
 
         public TransformObjectUndoInstance(EditorUndoManager parent, PositionBasedObjectInstance obj) : base(parent, obj.Room)
         {
@@ -152,6 +166,14 @@ namespace TombEditor
             if (obj is IRotateableY) RotationY = ((IRotateableY)obj).RotationY;
             if (obj is IRotateableYX) RotationX = ((IRotateableYX)obj).RotationX;
             if (obj is IRotateableYXRoll) Roll = ((IRotateableYXRoll)obj).Roll;
+            if (obj is ObjectGroup og)
+            {
+                _groupedObjectPositions = og
+                    .ToDictionary(
+                        i => i.GetHashCode(),
+                        i => i.Position
+                    );
+            }
 
             Valid = () => UndoObject != null && UndoObject.Room != null && Room.ExistsInLevel;
 
@@ -177,6 +199,16 @@ namespace TombEditor
                 if (UndoObject is IRotateableY && RotationY.HasValue) ((IRotateableY)obj).RotationY = RotationY.Value;
                 if (UndoObject is IRotateableYX && RotationX.HasValue) ((IRotateableYX)obj).RotationX = RotationX.Value;
                 if (UndoObject is IRotateableYXRoll && Roll.HasValue) ((IRotateableYXRoll)obj).Roll = Roll.Value;
+                if (UndoObject is ObjectGroup grp && _groupedObjectPositions != null)
+                {
+                    foreach (var groupedObject in grp)
+                    {
+                        if (_groupedObjectPositions.TryGetValue(groupedObject.GetHashCode(), out var position))
+                        {
+                            groupedObject.Position = position;
+                        }
+                    }
+                }
 
                 if (UndoObject is LightInstance)
                     Room.BuildGeometry(); // Rebuild lighting!

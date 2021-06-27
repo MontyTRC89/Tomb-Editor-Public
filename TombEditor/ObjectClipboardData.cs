@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using TombLib.IO;
 using TombLib.LevelData;
 using TombLib.LevelData.IO;
@@ -19,7 +21,12 @@ namespace TombEditor
             using (var stream = new MemoryStream())
             {
                 var writer = new BinaryWriterEx(stream);
-                Prj2Writer.SaveToPrj2OnlyObjects(stream, editor.Level, new[] { editor.SelectedObject });
+                var objectInstances = new List<ObjectInstance> { editor.SelectedObject };
+                if (editor.SelectedObject is ObjectGroup og)
+                {
+                    objectInstances.AddRange(og);
+                }
+                Prj2Writer.SaveToPrj2OnlyObjects(stream, editor.Level, objectInstances);
                 _data = stream.GetBuffer();
             }
         }
@@ -36,27 +43,46 @@ namespace TombEditor
 
         public ObjectInstance MergeGetSingleObject(Editor editor)
         {
-            Prj2Loader.LoadedObjects loadedObjects = CreateObjects();
-            ObjectInstance obj = (ObjectInstance)loadedObjects.Objects[0];
             LevelSettings newLevelSettings = editor.Level.Settings.Clone();
-            obj.CopyDependentLevelSettings(new Room.CopyDependentLevelSettingsArgs(null, newLevelSettings, loadedObjects.Settings, true));
             editor.UpdateLevelSettings(newLevelSettings);
 
-            // A little workaround to detect script id collisions already
-            if (obj is IHasScriptID)
+            Prj2Loader.LoadedObjects loadedObjects = CreateObjects();
+
+            var unpackedObjects = loadedObjects.Objects
+                .Select(obj =>
+                {
+                    obj.CopyDependentLevelSettings(
+                        new Room.CopyDependentLevelSettingsArgs(null, newLevelSettings, loadedObjects.Settings, true));
+
+                    // A little workaround to detect script id collisions already
+                    if (obj is IHasScriptID)
+                    {
+                        Room testRoom = editor.SelectedRoom;
+                        try
+                        {
+                            testRoom.AddObject(editor.Level, obj);
+                            testRoom.RemoveObject(editor.Level, obj);
+                        }
+                        catch (ScriptIdCollisionException)
+                        {
+                            ((IHasScriptID)obj).ScriptId = null;
+                        }
+                    }
+
+                    return obj;
+                })
+                .ToList();
+
+            if (unpackedObjects.Count <= 1)
             {
-                Room testRoom = editor.SelectedRoom;
-                try
-                {
-                    testRoom.AddObject(editor.Level, obj);
-                    testRoom.RemoveObject(editor.Level, obj);
-                }
-                catch (ScriptIdCollisionException)
-                {
-                    ((IHasScriptID)obj).ScriptId = null;
-                }
+                return unpackedObjects.FirstOrDefault();
             }
-            return obj;
+            else
+            {
+                var unpackedChildren = unpackedObjects.OfType<ItemInstance>().ToList();
+
+                return new ObjectGroup(unpackedChildren);
+            }
         }
     }
 }

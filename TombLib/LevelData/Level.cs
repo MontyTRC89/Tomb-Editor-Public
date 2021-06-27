@@ -165,6 +165,11 @@ namespace TombLib.LevelData
 
         public List<Room> DeleteTriggersForObject(ObjectInstance instance)
         {
+            if (instance is ObjectGroup og)
+            {
+                return og.SelectMany(DeleteTriggersForObject).Distinct().ToList();
+            }
+
             List<Room> result = new List<Room>();
 
             var isTriggerableObject = instance is MoveableInstance || instance is StaticInstance || instance is CameraInstance ||
